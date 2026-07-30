@@ -2,6 +2,28 @@
 
 All notable changes to **vitrine**.
 
+## v3.1.0 — Archive extraction improvements
+
+- **Extract several archives at once.** Select multiple archives and extract
+  them in one go — each unpacks into its own subfolder under the destination
+  you pick. Colliding folder names (e.g. `data.zip` + `data.7z`) are
+  automatically de-duplicated (`data`, `data (2)`, …), password-protected
+  archives prompt individually, and a failed one is skipped without stopping
+  the rest.
+- **Extract is now in the header ⋯ menu and the multi-select bar.** Previously
+  you could only reach it from a row's right-click menu or the details pane.
+  The ⋯ "More" menu now lists every action valid for the current selection —
+  Extract for archives, Edit tags for audio, plus Share / Download / Rename /
+  Copy / Move / Delete — and hides the ones that don't apply.
+- **Extract options are remembered.** Your choices in the Extract panel
+  (into a new folder, overwrite, delete original after extraction, open the
+  extracted folder) now persist as the defaults for your next extraction,
+  until you change them.
+- **Fixed: inline rename could stop working until a page refresh.** After using
+  split view, the active-pane target could get stuck on the second pane, which
+  silently prevented the single-pane rename box from opening (or closed it
+  immediately). It now resets correctly when the split isn't showing.
+
 ## v3.0.2 — Settings copy fix
 
 - **Two settings descriptions still said "filebrowser" instead of "vitrine"** —

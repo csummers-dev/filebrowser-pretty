@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { StatusError } from "@/api/utils";
-import { mapUnzipError, deriveSubfolderName } from "@/utils/unzipErrors";
+import {
+  mapUnzipError,
+  deriveSubfolderName,
+  buildBatchDests,
+} from "@/utils/unzipErrors";
 
 // Build a StatusError carrying the backend's plain-text body. The mapper
 // lowercases and substring-matches, so these mirror the package-level error
@@ -95,5 +99,51 @@ describe("deriveSubfolderName", () => {
     expect(deriveSubfolderName("photos.zip")).toBe("photos");
     expect(deriveSubfolderName("backup.tar.gz")).toBe("backup");
     expect(deriveSubfolderName("movie.part01.rar")).toBe("movie");
+  });
+});
+
+describe("buildBatchDests — multi-archive destination paths", () => {
+  it("gives each archive its own subfolder under the base", () => {
+    expect(buildBatchDests("/files/dl/", ["a.zip", "b.7z"])).toEqual([
+      "/files/dl/a",
+      "/files/dl/b",
+    ]);
+  });
+
+  it("normalises a base with no trailing slash", () => {
+    expect(buildBatchDests("/files/dl", ["a.zip"])).toEqual(["/files/dl/a"]);
+  });
+
+  it("de-duplicates colliding subfolder names (case-insensitively)", () => {
+    // data.zip + data.7z both derive "data"; the second gets a suffix.
+    expect(buildBatchDests("/x/", ["data.zip", "data.7z"])).toEqual([
+      "/x/data",
+      "/x/data%20(2)",
+    ]);
+    // Same name three times → data, data (2), data (3).
+    expect(buildBatchDests("/x/", ["Data.zip", "data.zip", "DATA.7z"])).toEqual([
+      "/x/Data",
+      "/x/data%20(2)",
+      "/x/DATA%20(3)",
+    ]);
+  });
+
+  it("URL-encodes spaces and special characters in the folder name", () => {
+    expect(buildBatchDests("/x/", ["My Backup #2.zip"])).toEqual([
+      "/x/My%20Backup%20%232",
+    ]);
+  });
+
+  it("falls back to 'archive' when a name derives an empty base", () => {
+    expect(buildBatchDests("/x/", [".zip", ".zip"])).toEqual([
+      "/x/archive",
+      "/x/archive%20(2)",
+    ]);
+  });
+
+  it("preserves input order and length", () => {
+    const out = buildBatchDests("/x/", ["c.zip", "a.zip", "b.zip"]);
+    expect(out).toHaveLength(3);
+    expect(out).toEqual(["/x/c", "/x/a", "/x/b"]);
   });
 });
