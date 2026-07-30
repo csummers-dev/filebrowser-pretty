@@ -2,6 +2,14 @@
 
 All notable changes to **vitrine**.
 
+## v3.1.1 — Security patch
+
+- **Updated `golang.org/x/text` to 0.39.0**, closing an infinite-loop
+  denial-of-service (GO-2026-5970) reachable through the ID3 tag writer. No
+  functional or visual changes.
+- **Updated `dompurify` to 3.4.12** (upstream hardening of the HTML
+  sanitizer). No functional or visual changes.
+
 ## v3.1.0 — Archive extraction improvements
 
 - **Extract several archives at once.** Select multiple archives and extract
