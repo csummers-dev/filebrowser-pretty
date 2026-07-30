@@ -8,9 +8,17 @@
           <Icon name="package" :size="16" :stroke-width="1.6" />
         </span>
         <div class="extract-source__text">
-          <div class="extract-source__name">{{ snapshot?.name ?? "" }}</div>
+          <div class="extract-source__name">
+            {{ isMulti ? `${sources.length} archives` : (snapshot?.name ?? "") }}
+          </div>
           <div class="extract-source__meta">
-            {{ snapshot ? filesize(snapshot.size) : "" }}
+            {{
+              isMulti
+                ? filesize(totalSize)
+                : snapshot
+                  ? filesize(snapshot.size)
+                  : ""
+            }}
           </div>
         </div>
       </div>
@@ -28,7 +36,13 @@
          overwrite toggle is irrelevant (a fresh folder has no collisions)
          so we explicitly grey it out with a helper tooltip. -->
       <div class="extract-options">
-        <label class="extract-option">
+        <!-- Multi-select: each archive always lands in its own subfolder, so
+             the single-folder toggle + name input are replaced by a short
+             note. -->
+        <p v-if="isMulti" class="extract-instructions">
+          Each archive extracts into its own new folder under the destination.
+        </p>
+        <label v-if="!isMulti" class="extract-option">
           <Toggle v-model="newSubfolder" />
           <span class="extract-option__text">
             <span class="extract-option__label">Extract into new folder</span>
@@ -43,7 +57,7 @@
         </label>
         <!-- WS9: editable destination folder name — shown only while the
              "new folder" toggle is on; seeded from the archive's name. -->
-        <div v-if="newSubfolder" class="extract-folder-name">
+        <div v-if="!isMulti && newSubfolder" class="extract-folder-name">
           <label class="extract-folder-name__label" for="extract-folder-input">
             Folder name
           </label>
@@ -60,12 +74,14 @@
         </div>
         <label
           class="extract-option"
-          :class="{ 'is-disabled': newSubfolder }"
+          :class="{ 'is-disabled': !isMulti && newSubfolder }"
           :title="
-            newSubfolder ? 'Not applicable — extracting into a new folder' : ''
+            !isMulti && newSubfolder
+              ? 'Not applicable — extracting into a new folder'
+              : ''
           "
         >
-          <Toggle v-model="overwrite" :disabled="newSubfolder" />
+          <Toggle v-model="overwrite" :disabled="!isMulti && newSubfolder" />
           <span class="extract-option__text">
             <span class="extract-option__label"
               >Overwrite conflicting files</span
@@ -143,6 +159,7 @@ import { usePreferences } from "@/composables/usePreferences";
 import { useExtractIndicator } from "@/composables/useExtractIndicator";
 import { filesize } from "@/utils";
 import { deriveSubfolderName } from "@/utils/unzipErrors";
+import { isExtractable } from "@/utils/archive";
 import SlideOver from "@/components/SlideOver.vue";
 import FolderPicker from "@/components/files/FolderPicker.vue";
 import Toggle from "@/components/settings/Toggle.vue";
@@ -163,7 +180,7 @@ const emit = defineEmits<{
 const route = useRoute();
 const fileStore = useFileStore();
 const prefs = usePreferences();
-const { runExtract } = useExtractIndicator();
+const { runExtract, runExtractBatch } = useExtractIndicator();
 
 const pickerRef = ref<InstanceType<typeof FolderPicker> | null>(null);
 const destPath = ref<string>("");
@@ -177,27 +194,31 @@ const overwrite = ref<boolean>(false);
 // successful extraction. Failed extractions never trigger the delete
 // so the user can retry with the archive still in place.
 const deleteOriginal = ref<boolean>(false);
-// RC-8: Navigate into the extracted folder when done. Off by default and
-// remembered across sessions in the prefs bag (unlike the per-open
-// toggles above) — "keep persistent whenever updated".
+// RC-8: Navigate into the extracted folder when done.
 const openFolder = ref<boolean>(false);
 
-// Persist the toggle the moment it changes. The redundant write when the
-// open-watch seeds it from prefs is harmless (optimistic + debounced).
-watch(openFolder, (v) => {
-  void prefs.set("extractOpenFolder", v);
-});
+// All four option toggles above are remembered per user: whatever you pick when
+// you START an extraction becomes the default for the next one, and stays that
+// way until you change it and extract again. Persistence happens in onSubmit
+// (not on every toggle flip) and the values are seeded back from prefs on open.
+// (`folderName` and the destination path are archive/location-specific, so they
+// are seeded fresh each open rather than persisted.)
 
 /**
- * Snapshot of the source archive — captured on `open` so layout-store
- * changes after submission (selection clears, route changes) don't pull
- * data out from under the panel mid-extraction.
+ * The archive(s) to extract — captured on `open` so layout-store changes
+ * after submission (selection clears, route changes) don't pull data out
+ * from under the panel mid-extraction. Length 1 is the normal single-archive
+ * flow; length > 1 is a multi-select batch (each archive extracts into its
+ * own subfolder). `snapshot` is the first source, kept so all the existing
+ * single-archive logic reads unchanged.
  */
-const snapshot = ref<{
-  url: string;
-  name: string;
-  size: number;
-} | null>(null);
+type ArchiveSource = { url: string; name: string; size: number };
+const sources = ref<ArchiveSource[]>([]);
+const snapshot = computed<ArchiveSource | null>(() => sources.value[0] ?? null);
+const isMulti = computed(() => sources.value.length > 1);
+const totalSize = computed(() =>
+  sources.value.reduce((sum, s) => sum + (s.size || 0), 0)
+);
 
 const initialPath = computed(() => {
   if (props.override?.base) return props.override.base.replace(/\/?$/, "/");
@@ -228,13 +249,19 @@ watch(newSubfolder, (on) => {
   }
 });
 
-const title = computed(() => snapshot.value?.name ?? "Extract");
+const title = computed(() =>
+  isMulti.value
+    ? `${sources.value.length} archives`
+    : (snapshot.value?.name ?? "Extract")
+);
 
 const canSubmit = computed(() => {
-  if (!snapshot.value) return false;
+  if (sources.value.length === 0) return false;
   if (!destPath.value) return false;
-  // WS9: a new-folder extraction needs a non-empty folder name.
-  if (newSubfolder.value && !folderName.value.trim()) return false;
+  // WS9: a single-archive new-folder extraction needs a non-empty folder name.
+  // (Multi-select always derives a per-archive subfolder name, so no input.)
+  if (!isMulti.value && newSubfolder.value && !folderName.value.trim())
+    return false;
   return true;
 });
 
@@ -253,17 +280,39 @@ const onCancel = () => {
  * move/copy transfer indicator). Errors surface as a toast, not in-panel.
  */
 const onSubmit = () => {
-  if (!canSubmit.value || !snapshot.value) return;
-  const params = {
-    sourceUrl: snapshot.value.url,
-    name: snapshot.value.name,
+  if (!canSubmit.value || sources.value.length === 0) return;
+  // Remember the chosen options so the next extraction defaults to them
+  // (persist-on-start; seeded back in the open watch below).
+  void prefs.set("extractNewSubfolder", newSubfolder.value);
+  void prefs.set("extractOverwrite", overwrite.value);
+  void prefs.set("extractDeleteOriginal", deleteOriginal.value);
+  void prefs.set("extractOpenFolder", openFolder.value);
+  emit("done");
+
+  if (isMulti.value) {
+    // Multi-select: each archive extracts into its own subfolder under the
+    // picked destination. `destPath` is that shared base.
+    void runExtractBatch(
+      sources.value.map((s) => ({ url: s.url, name: s.name })),
+      {
+        base: destPath.value,
+        overwrite: overwrite.value,
+        deleteOriginal: deleteOriginal.value,
+        openFolder: openFolder.value,
+      }
+    );
+    return;
+  }
+
+  const snap = sources.value[0];
+  void runExtract({
+    sourceUrl: snap.url,
+    name: snap.name,
     dest: finalDest.value,
     overwrite: overwrite.value,
     deleteOriginal: deleteOriginal.value,
     openFolder: openFolder.value,
-  };
-  emit("done");
-  void runExtract(params);
+  });
 };
 
 /**
@@ -275,41 +324,46 @@ watch(
   () => props.open,
   (open) => {
     if (!open) return;
-    overwrite.value = false;
-    deleteOriginal.value = false;
-    newSubfolder.value = true;
-    // RC-8: restore the remembered "open extracted folder" choice.
+    // Seed every option from the last-used choice (persisted in onSubmit).
+    // First-use defaults: extract into a new folder, don't overwrite, keep the
+    // original, don't auto-open.
+    newSubfolder.value = prefs.get<boolean>("extractNewSubfolder", true);
+    overwrite.value = prefs.get<boolean>("extractOverwrite", false);
+    deleteOriginal.value = prefs.get<boolean>("extractDeleteOriginal", false);
     openFolder.value = prefs.get<boolean>("extractOpenFolder", false);
     destPath.value = initialPath.value;
 
-    // Dual-pane: the second pane passes its archive directly via `override`.
+    // Dual-pane: the second pane passes its archive directly via `override`
+    // (always a single archive).
     if (props.override) {
-      snapshot.value = {
-        url: props.override.url,
-        name: props.override.name,
-        size: props.override.size ?? 0,
-      };
+      sources.value = [
+        {
+          url: props.override.url,
+          name: props.override.name,
+          size: props.override.size ?? 0,
+        },
+      ];
       folderName.value = deriveSubfolderName(props.override.name);
       return;
     }
 
+    // Single-pane: extract every selected archive. Non-archives in the
+    // selection are ignored defensively (the header gate already requires a
+    // pure-archive selection to offer Extract at all).
     const req = fileStore.req;
-    if (!req || fileStore.selected.length !== 1) {
-      snapshot.value = null;
+    if (!req || fileStore.selected.length === 0) {
+      sources.value = [];
       return;
     }
-    const item = req.items[fileStore.selected[0]];
-    if (!item) {
-      snapshot.value = null;
-      return;
-    }
-    snapshot.value = {
-      url: item.url,
-      name: item.name,
-      size: item.size,
-    };
-    // WS9: seed the editable new-folder name from the archive.
-    folderName.value = deriveSubfolderName(item.name);
+    sources.value = fileStore.selected
+      .map((i) => req.items[i])
+      .filter((it): it is (typeof req.items)[number] => !!it && isExtractable(it.name))
+      .map((it) => ({ url: it.url, name: it.name, size: it.size }));
+    // WS9: seed the editable new-folder name from the first archive (used only
+    // in the single-archive flow).
+    folderName.value = sources.value[0]
+      ? deriveSubfolderName(sources.value[0].name)
+      : "";
   }
 );
 </script>

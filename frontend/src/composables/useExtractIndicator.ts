@@ -2,7 +2,11 @@ import { useToast } from "vue-toastification";
 import { useRouter } from "vue-router";
 import { useFileStore } from "@/stores/file";
 import { files as api } from "@/api";
-import { mapUnzipError, isArchivePasswordError } from "@/utils/unzipErrors";
+import {
+  mapUnzipError,
+  isArchivePasswordError,
+  buildBatchDests,
+} from "@/utils/unzipErrors";
 import { useArchivePassword } from "@/composables/useArchivePassword";
 
 /**
@@ -109,5 +113,91 @@ export function useExtractIndicator() {
     }
   };
 
-  return { runExtract };
+  /**
+   * Extract SEVERAL archives in one action (multi-select). Each archive
+   * extracts into its OWN subfolder (derived from its name) under `base`, so
+   * they never collide. Runs sequentially — the backend does one archive per
+   * request — with a single progress toast and one summary at the end.
+   * Password-protected archives prompt individually (a wrong/cancelled one is
+   * skipped, the rest still run). `openFolder` navigates to `base` (which now
+   * holds all the new subfolders) once, on success.
+   */
+  const runExtractBatch = async (
+    items: Array<{ url: string; name: string }>,
+    opts: {
+      base: string;
+      overwrite: boolean;
+      deleteOriginal: boolean;
+      openFolder: boolean;
+    }
+  ): Promise<void> => {
+    const { base, overwrite, deleteOriginal, openFolder } = opts;
+    const baseSlash = base.replace(/\/?$/, "/");
+    const total = items.length;
+    let ok = 0;
+
+    // Per-archive destinations, de-duplicated so two archives that derive the
+    // same subfolder name don't extract into each other.
+    const dests = buildBatchDests(
+      base,
+      items.map((i) => i.name)
+    );
+
+    const progressId = toast.info(
+      `Extracting ${total} archives…`,
+      { timeout: false, closeButton: false, draggable: false }
+    );
+
+    for (let idx = 0; idx < items.length; idx++) {
+      const it = items[idx];
+      const dest = dests[idx];
+      let password: string | undefined;
+      let triedPassword = false;
+      let extracted = false;
+
+      for (;;) {
+        try {
+          await api.unzip(it.url, dest, overwrite, password);
+          extracted = true;
+          ok++;
+          break;
+        } catch (err) {
+          if (isArchivePasswordError(err)) {
+            const entered = await requestPassword({ incorrect: triedPassword });
+            if (entered == null) break; // skip this one, keep going
+            password = entered;
+            triedPassword = true;
+            continue;
+          }
+          toast.error(`${it.name}: ${mapUnzipError(err)}`);
+          break;
+        }
+      }
+
+      // Delete the source only when its own extraction succeeded.
+      if (extracted && deleteOriginal) {
+        try {
+          await api.remove(it.url);
+        } catch {
+          /* non-fatal — the extraction itself worked */
+        }
+      }
+    }
+
+    toast.dismiss(progressId);
+    if (ok > 0) {
+      toast.success(
+        ok === total
+          ? `Extracted ${ok} archives to ${decodeURIComponent(base)}`
+          : `Extracted ${ok} of ${total} archives to ${decodeURIComponent(base)}`
+      );
+    }
+    if (openFolder && ok > 0) {
+      void router.push({ path: baseSlash });
+    } else {
+      fileStore.reload = true;
+    }
+  };
+
+  return { runExtract, runExtractBatch };
 }

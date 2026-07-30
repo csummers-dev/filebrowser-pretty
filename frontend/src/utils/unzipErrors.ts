@@ -96,3 +96,27 @@ export function isArchivePasswordError(err: unknown): boolean {
 export function deriveSubfolderName(filename: string): string {
   return archiveBaseName(filename);
 }
+
+/**
+ * Destination paths for a MULTI-archive extraction: each archive extracts into
+ * its own subfolder (derived from its name) under `base`. Subfolder names are
+ * de-duplicated case-insensitively — if two selected archives derive the same
+ * folder (e.g. `data.zip` + `data.7z`, or the same name twice) the later ones
+ * get a ` (2)`, ` (3)`… suffix so they never extract into each other. Returns
+ * one URL-encoded destination path per input name, in order. A name that
+ * derives an empty base falls back to `archive`.
+ */
+export function buildBatchDests(base: string, names: string[]): string[] {
+  const baseSlash = base.replace(/\/?$/, "/");
+  const used = new Set<string>();
+  return names.map((name) => {
+    let sub = deriveSubfolderName(name) || "archive";
+    if (used.has(sub.toLowerCase())) {
+      let n = 2;
+      while (used.has(`${sub} (${n})`.toLowerCase())) n++;
+      sub = `${sub} (${n})`;
+    }
+    used.add(sub.toLowerCase());
+    return baseSlash + encodeURIComponent(sub);
+  });
+}

@@ -800,6 +800,16 @@
             <Icon name="forward" :size="14" class="text-white/80" />
             <span>{{ t("buttons.moveFiles") }}</span>
           </button>
+          <!-- Extract shows only when EVERY selected item is an archive
+               (headerButtons.extract); each extracts into its own subfolder. -->
+          <button
+            v-if="headerButtons.extract"
+            @click="layoutStore.showHover('extract')"
+            title="Extract archives"
+          >
+            <Icon name="package-open" :size="14" class="text-white/80" />
+            <span>Extract</span>
+          </button>
           <!-- v1.3 S4-2: Bulk rename pill button. Only renders for multi-select
                (single-select uses inline rename in ListingItem). Gated on
                perm.rename. -->
@@ -1076,9 +1086,21 @@ const onPaneAActivate = () => {
 // the split collapses (narrowed below the min width, or toggled off) pane B is
 // no longer mounted, so pane A must become active again — otherwise the
 // sidebar/palette could navigate an invisible pane B.
-watch(splitActive, (active) => {
-  if (!active && panes.activePane !== "a") panes.setActive("a");
-});
+//
+// `immediate: true` is important: `panes` is a singleton that outlives this
+// component, and the reset only fires on a *transition*. Without the immediate
+// pass, a re-mount that lands with the split already collapsed but a stale
+// `activePane === "b"` (e.g. split on + pane B clicked → leave /files → narrow
+// the window → return) would never self-correct. That stuck state silently
+// breaks single-pane inline rename (its `isRenaming` gate requires
+// `activePane === "a"`), which a page refresh — resetting the store — "fixes".
+watch(
+  splitActive,
+  (active) => {
+    if (!active && panes.activePane !== "a") panes.setActive("a");
+  },
+  { immediate: true }
+);
 const contextMenuPos = ref<{ x: number; y: number }>({ x: 0, y: 0 });
 
 const $showError = inject<IToastError>("$showError")!;
@@ -1937,16 +1959,20 @@ const headerButtons = computed(() => {
       authStore.user?.perm.download,
     move: fileStore.selectedCount > 0 && authStore.user?.perm.rename,
     copy: fileStore.selectedCount > 0 && authStore.user?.perm.create,
-    // Extract (PR #5746) — single `.zip` selected, user can create
-    // (extraction writes new files), and operator hasn't disabled the
-    // feature via `--unzipEnabled=false`.
+    // Extract (PR #5746) — one OR MORE archives selected (each extracts into
+    // its own subfolder), the user can create (extraction writes new files),
+    // and the operator hasn't disabled the feature via `--unzipEnabled=false`.
+    // A mixed selection (an archive + a non-archive) doesn't qualify: every
+    // selected item must be extractable, so the action is unambiguous.
     extract:
       unzipEnabled &&
-      authStore.user?.perm.create &&
-      fileStore.selectedCount === 1 &&
+      !!authStore.user?.perm.create &&
+      fileStore.selectedCount >= 1 &&
       fileStore.req != null &&
       fileStore.req.items.length > 0 &&
-      isExtractable(fileStore.req.items[fileStore.selected[0]]?.name ?? ""),
+      fileStore.selected.every((i) =>
+        isExtractable(fileStore.req!.items[i]?.name ?? "")
+      ),
   };
 });
 
@@ -3430,14 +3456,18 @@ watch(
       return;
     }
     if (name === "extract") {
-      // Extract targets exactly one selected `.zip` in the current
-      // listing. Mirror the gate from `headerButtons.extract` so a stray
-      // `layoutStore.showHover("extract")` from a stale code path can't
-      // open the panel with no source.
+      // Extract targets one OR MORE selected archives in the current listing
+      // (each extracts into its own subfolder). Mirror the gate from
+      // `headerButtons.extract` so a stray `layoutStore.showHover("extract")`
+      // from a stale code path can't open the panel with no valid source:
+      // every selected item must be extractable.
       if (!unzipEnabled) return;
-      if (!fileStore.isListing || fileStore.selectedCount !== 1) return;
-      const item = fileStore.req?.items[fileStore.selected[0]];
-      if (!item || !isExtractable(item.name)) return;
+      const req = fileStore.req;
+      if (!fileStore.isListing || fileStore.selectedCount < 1 || !req) return;
+      const allArchives = fileStore.selected.every((i) =>
+        isExtractable(req.items[i]?.name ?? "")
+      );
+      if (!allArchives) return;
       layoutStore.closeHovers();
       closeAllPanels();
       extractOpen.value = true;
@@ -3533,7 +3563,11 @@ const sectionMoreItems = computed<MenuItem[]>(() => {
           action: () => favTitleDialog.open(currentFolderPath.value),
         }
       : null,
-    // V2-J: Share + Download moved off the hero cluster into ⋯ to declutter.
+    // Selection actions — each appears ONLY when it's valid for the current
+    // selection (same gates the InfoPane rail uses), so the ⋯ menu mirrors
+    // exactly what you can do with what's selected: Extract shows for a single
+    // archive but not an image, Edit tags shows only when audio is selected,
+    // etc. (V2-J: Share + Download were moved off the hero cluster into ⋯.)
     headerButtons.value.share
       ? {
           label: t("buttons.share"),
@@ -3546,6 +3580,48 @@ const sectionMoreItems = computed<MenuItem[]>(() => {
           label: t("buttons.download"),
           icon: "download",
           action: download,
+        }
+      : null,
+    headerButtons.value.extract
+      ? {
+          label: "Extract",
+          icon: "package-open",
+          action: () => layoutStore.showHover("extract"),
+        }
+      : null,
+    bulkAudioCount.value >= 1 && !!authStore.user?.perm.modify
+      ? {
+          label: "Edit tags",
+          icon: "music",
+          action: () => layoutStore.showHover("audio-tags"),
+        }
+      : null,
+    headerButtons.value.rename
+      ? {
+          label: t("buttons.rename"),
+          icon: "pencil",
+          action: () => layoutStore.showHover("rename"),
+        }
+      : null,
+    headerButtons.value.copy
+      ? {
+          label: t("buttons.copyFile"),
+          icon: "copy",
+          action: () => layoutStore.showHover("copy"),
+        }
+      : null,
+    headerButtons.value.move
+      ? {
+          label: t("buttons.moveFile"),
+          icon: "forward",
+          action: () => layoutStore.showHover("move"),
+        }
+      : null,
+    headerButtons.value.delete
+      ? {
+          label: t("buttons.delete"),
+          icon: "trash-2",
+          action: () => layoutStore.showHover("delete"),
         }
       : null,
     { label: "Refresh", icon: "rotate-ccw", action: refresh, kbd: "/" },
