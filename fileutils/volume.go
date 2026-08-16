@@ -3,6 +3,7 @@
 package fileutils
 
 import (
+	"path"
 	"syscall"
 
 	"github.com/spf13/afero"
@@ -57,4 +58,32 @@ func SameVolume(afs afero.Fs, a, b string) (bool, error) {
 		return false, nil // can't tell → treat as different (safe)
 	}
 	return sa.Dev == sb.Dev, nil
+}
+
+// IsMountpoint reports whether p is itself a filesystem mount point — a
+// directory whose device id (st_dev) differs from that of its parent directory.
+// In the documented vitrine deployment each served folder is an individual bind
+// mount (`- /host/Movies:/srv/Movies`), which makes every top-level folder a
+// mount point.
+//
+// A mount point can't be renamed or moved from inside the container: rename(2)
+// fails with EXDEV/EBUSY, and MoveFile's copy-then-delete fallback then can't
+// remove the source (unlinkat → EBUSY, "device or resource busy") — so it would
+// strand a full duplicate at the destination. The HTTP layer calls this to
+// refuse such a move up front, before any bytes are copied.
+//
+// The second return, ok, is false when it can't be determined (a stat error, or
+// a FileInfo without a *syscall.Stat_t — e.g. an in-memory test fs). Callers
+// treat not-ok as "not a mount point" so an ordinary move is never blocked by
+// uncertainty — the same conservative stance as SameVolume above.
+func IsMountpoint(afs afero.Fs, p string) (isMount, ok bool) {
+	dev, ok := DeviceID(afs, p)
+	if !ok {
+		return false, false
+	}
+	parentDev, ok := DeviceID(afs, path.Dir(p))
+	if !ok {
+		return false, false
+	}
+	return dev != parentDev, true
 }

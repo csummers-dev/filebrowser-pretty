@@ -52,3 +52,37 @@ func TestSameVolumeMissingPathErrors(t *testing.T) {
 		t.Fatal("a missing source path should surface a stat error")
 	}
 }
+
+func TestIsMountpointPlainDirIsFalse(t *testing.T) {
+	// A subdirectory of a tempdir shares its parent's device id, so it's not a
+	// mount point — the common case a real move must be allowed to proceed.
+	dir := t.TempDir()
+	sub := filepath.Join(dir, "sub")
+	if err := os.Mkdir(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	isMount, ok := IsMountpoint(afero.NewOsFs(), sub)
+	if !ok {
+		t.Fatal("device ids of a tempdir subdir and its parent should be knowable")
+	}
+	if isMount {
+		t.Fatal("a plain subdirectory shares its parent's device id → not a mount point")
+	}
+}
+
+func TestIsMountpointUnknownFsIsNotOk(t *testing.T) {
+	// A MemMapFs carries no *syscall.Stat_t, so a mount point can't be
+	// determined → ok=false, and callers must treat that as "not a mount point"
+	// so ordinary moves are never blocked by uncertainty.
+	fs := afero.NewMemMapFs()
+	_ = fs.MkdirAll("/parent/child", 0o755)
+
+	isMount, ok := IsMountpoint(fs, "/parent/child")
+	if ok {
+		t.Fatal("an in-memory fs has no st_dev → ok must be false")
+	}
+	if isMount {
+		t.Fatal("not-ok must report isMount=false so moves aren't blocked")
+	}
+}

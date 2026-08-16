@@ -17,3 +17,10 @@ func SameVolume(_ afero.Fs, _, _ string) (bool, error) {
 func DeviceID(_ afero.Fs, _ string) (uint64, bool) {
 	return 0, false
 }
+
+// IsMountpoint is unavailable on Windows (no portable st_dev to compare); ok is
+// always false so callers never block a move on this check. The bind-mount
+// deployment this guards against is a Linux/container concern.
+func IsMountpoint(_ afero.Fs, _ string) (isMount, ok bool) {
+	return false, false
+}

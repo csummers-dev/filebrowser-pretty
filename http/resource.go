@@ -318,6 +318,18 @@ func resourcePatchHandler(fileCache FileCache) handleFunc {
 			return http.StatusBadRequest, err
 		}
 
+		// A top-level served folder is typically its own bind mount. Renaming or
+		// moving a mount point can't work from inside the container: the rename
+		// syscall fails and MoveFile's copy-fallback then can't delete the source
+		// (unlinkat → EBUSY), stranding a full duplicate at the destination.
+		// Refuse it up front — before any copy runs — with a message the UI
+		// surfaces (400 is passed through to the client body).
+		if action == "rename" {
+			if isMount, ok := fileutils.IsMountpoint(d.user.Fs, src); ok && isMount {
+				return http.StatusBadRequest, errMountpointMove(src)
+			}
+		}
+
 		srcInfo, _ := d.user.Fs.Stat(src)
 		dstInfo, _ := d.user.Fs.Stat(dst)
 		same := os.SameFile(srcInfo, dstInfo)
@@ -378,6 +390,17 @@ func publishPatch(r *http.Request, d *data, action, src, dst string) {
 	case "copy":
 		events.Publish(events.FileCopied{Base: base, From: src, To: dst})
 	}
+}
+
+// errMountpointMove is the user-facing error returned when a move/rename is
+// refused because the source is itself a filesystem mount point (see
+// fileutils.IsMountpoint). It's mapped to 400 so data.go surfaces the message
+// to the UI instead of a bare status line.
+func errMountpointMove(src string) error {
+	return fmt.Errorf(
+		"can't move or rename %q — it's a mounted folder (its own mount point), so it "+
+			"can't be moved from inside the app. Change its mount path in your Docker/compose "+
+			"config instead", path.Base(src))
 }
 
 func checkParent(src, dst string) error {

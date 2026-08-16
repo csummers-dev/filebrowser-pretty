@@ -248,6 +248,15 @@ func (tm *transferManager) jobsPostHandler() handleFunc {
 			if err := checkParent(src, dst); err != nil {
 				return http.StatusBadRequest, err
 			}
+			// A move whose source is its own bind mount can't complete: the
+			// rename fails and the copy-fallback can't delete the mount point
+			// afterwards, leaving a stranded duplicate. Refuse it up front.
+			// (Copy is fine — it never removes the source.)
+			if kind == jobs.KindMove {
+				if isMount, ok := fileutils.IsMountpoint(d.user.Fs, src); ok && isMount {
+					return http.StatusBadRequest, errMountpointMove(src)
+				}
+			}
 			if !ri.Overwrite && !ri.Rename {
 				if _, err := d.user.Fs.Stat(dst); err == nil {
 					verb := "move"
