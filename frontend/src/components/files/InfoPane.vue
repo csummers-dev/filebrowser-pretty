@@ -1,7 +1,7 @@
 <template>
   <aside
     v-if="paneVisible"
-    class="info-pane w-[320px] shrink-0 border-l border-line bg-canvas flex flex-col overflow-y-auto max-lg:fixed max-lg:top-12 max-lg:right-0 max-lg:bottom-0 max-lg:h-[calc(100vh-48px)] max-lg:z-40 max-lg:shadow-2xl max-[540px]:left-16 max-[540px]:w-auto"
+    class="info-pane w-[320px] shrink-0 border-l border-line bg-canvas flex flex-col overflow-hidden max-lg:fixed max-lg:top-12 max-lg:right-0 max-lg:bottom-0 max-lg:h-[calc(100vh-48px)] max-lg:z-40 max-lg:shadow-2xl max-[540px]:left-16 max-[540px]:w-auto"
   >
     <!-- Pane header (no divider — keeps the panel calm + sidebar-like) -->
     <div class="h-11 px-4 flex items-center justify-between shrink-0">
@@ -17,345 +17,354 @@
       </button>
     </div>
 
-    <!-- ── State 1: a single item is selected (RC-4) ─────────────── -->
-    <template v-if="item">
-      <!-- Preview -->
-      <div class="px-4 pt-2 pb-3">
-        <div
-          class="aspect-[4/3] rounded-lg border border-line overflow-hidden relative flex items-center justify-center preview-mesh"
-        >
-          <!-- Photo / video / PDF thumbnail — fill the whole frame. -->
-          <img
-            v-if="hasThumbnail"
-            :src="thumbnailUrl"
-            class="w-full h-full object-cover"
-            :alt="item.name"
-          />
-          <!-- RC-42: embedded album art for a selected music file. -->
-          <img
-            v-else-if="albumArtUrl"
-            :src="albumArtUrl"
-            class="w-full h-full object-cover"
-            alt="Album artwork"
-          />
-          <!-- batch #4: embedded EPUB cover for a selected book, so the
+    <!-- Scrollable body. The header and footer stay pinned (shrink-0); this
+         middle region owns the scroll. `min-h-0` lets it shrink below its
+         content's natural height so overflow-y engages here instead of the
+         details spilling past the bottom of the pane uncut. It is NOT a flex
+         container — a plain block so its children keep their natural height
+         and never get squished by flex-shrink. -->
+    <div class="ip-scroll flex-1 min-h-0 overflow-y-auto">
+      <!-- ── State 1: a single item is selected (RC-4) ─────────────── -->
+      <template v-if="item">
+        <!-- Preview -->
+        <div class="px-4 pt-2 pb-3">
+          <div
+            class="aspect-[4/3] rounded-lg border border-line overflow-hidden relative flex items-center justify-center preview-mesh"
+          >
+            <!-- Photo / video / PDF thumbnail — fill the whole frame. -->
+            <img
+              v-if="hasThumbnail"
+              :src="thumbnailUrl"
+              class="w-full h-full object-cover"
+              :alt="item.name"
+            />
+            <!-- RC-42: embedded album art for a selected music file. -->
+            <img
+              v-else-if="albumArtUrl"
+              :src="albumArtUrl"
+              class="w-full h-full object-cover"
+              alt="Album artwork"
+            />
+            <!-- batch #4: embedded EPUB cover for a selected book, so the
                details pane matches the preview pane. -->
-          <img
-            v-else-if="epubCoverUrl"
-            :src="epubCoverUrl"
-            class="max-w-full max-h-full w-auto h-auto object-contain rounded-md shadow-sm"
-            alt="Book cover"
-          />
-          <!-- No image preview (folders, archives, code, blobs, …): fill the
+            <img
+              v-else-if="epubCoverUrl"
+              :src="epubCoverUrl"
+              class="max-w-full max-h-full w-auto h-auto object-contain rounded-md shadow-sm"
+              alt="Book cover"
+            />
+            <!-- No image preview (folders, archives, code, blobs, …): fill the
                whole frame with the file's vivid color tile + matching icon,
                mirroring the grid / gallery tile styling. -->
-          <div v-else class="info-tile" :class="iconColorClass">
-            <Icon
-              :name="iconName"
-              :size="46"
-              :stroke-width="1.5"
-              :fill="item.isDir ? 'currentColor' : 'none'"
-            />
+            <div v-else class="info-tile" :class="iconColorClass">
+              <Icon
+                :name="iconName"
+                :size="46"
+                :stroke-width="1.5"
+                :fill="item.isDir ? 'currentColor' : 'none'"
+              />
+            </div>
           </div>
         </div>
-      </div>
 
-      <!-- Title -->
-      <div class="px-4 pb-3">
-        <div
-          class="info-name text-[15px] font-semibold text-ink-1 leading-snug"
-        >
-          <template v-for="(seg, i) in nameSegments" :key="i"
-            >{{ seg }}<wbr
-          /></template>
+        <!-- Title -->
+        <div class="px-4 pb-3">
+          <div
+            class="info-name text-[15px] font-semibold text-ink-1 leading-snug"
+          >
+            <template v-for="(seg, i) in nameSegments" :key="i"
+              >{{ seg }}<wbr
+            /></template>
+          </div>
+          <div class="text-[12px] text-ink-3 mt-0.5 tabular">
+            {{ typeLabel }}<span v-if="!item.isDir"> · {{ sizeLabel }}</span>
+          </div>
         </div>
-        <div class="text-[12px] text-ink-3 mt-0.5 tabular">
-          {{ typeLabel }}<span v-if="!item.isDir"> · {{ sizeLabel }}</span>
+
+        <!-- Primary action grid: Share / Download / Rename / Delete — fixed positions -->
+        <div class="px-4 pb-2 grid grid-cols-4 gap-1.5">
+          <button
+            v-if="canShare"
+            @click="action('share')"
+            class="info-action info-action--share"
+            title="Share"
+          >
+            <Icon name="share" :size="14" />
+            <span>Share</span>
+          </button>
+          <button
+            v-if="canDownload"
+            @click="download"
+            class="info-action info-action--download"
+            title="Download"
+          >
+            <Icon name="download" :size="14" />
+            <span>Download</span>
+          </button>
+          <button
+            v-if="canRename"
+            @click="action('rename')"
+            class="info-action info-action--rename"
+            title="Rename"
+          >
+            <Icon name="pencil" :size="14" />
+            <span>Rename</span>
+          </button>
+          <button
+            v-if="canDelete"
+            @click="action('delete')"
+            class="info-action info-action--danger"
+            title="Delete"
+          >
+            <Icon name="trash-2" :size="14" />
+            <span>Delete</span>
+          </button>
         </div>
-      </div>
 
-      <!-- Primary action grid: Share / Download / Rename / Delete — fixed positions -->
-      <div class="px-4 pb-2 grid grid-cols-4 gap-1.5">
-        <button
-          v-if="canShare"
-          @click="action('share')"
-          class="info-action info-action--share"
-          title="Share"
-        >
-          <Icon name="share" :size="14" />
-          <span>Share</span>
-        </button>
-        <button
-          v-if="canDownload"
-          @click="download"
-          class="info-action info-action--download"
-          title="Download"
-        >
-          <Icon name="download" :size="14" />
-          <span>Download</span>
-        </button>
-        <button
-          v-if="canRename"
-          @click="action('rename')"
-          class="info-action info-action--rename"
-          title="Rename"
-        >
-          <Icon name="pencil" :size="14" />
-          <span>Rename</span>
-        </button>
-        <button
-          v-if="canDelete"
-          @click="action('delete')"
-          class="info-action info-action--danger"
-          title="Delete"
-        >
-          <Icon name="trash-2" :size="14" />
-          <span>Delete</span>
-        </button>
-      </div>
-
-      <!-- Secondary action row: Move / Copy / (Preview or Extract).
+        <!-- Secondary action row: Move / Copy / (Preview or Extract).
          For files this is a clean 3-up grid; for folders Preview/Extract
          are omitted and the row falls back to 2-col so Move + Copy still
          fill the width. The third tile swaps to "Extract" when the file
          is a supported archive (zip / 7z / rar / tar family) and the user
          can create — an archive's "preview" really is its contents, which
          is what Extract opens. -->
-      <div
-        v-if="canMove || canCopy || !item.isDir"
-        class="pb-4 grid gap-1.5"
-        :class="
-          !item.isDir
-            ? canEditTags
-              ? 'px-4 grid-cols-4'
-              : 'px-4 grid-cols-3'
-            : 'grid-cols-2 w-2/3 mx-auto'
-        "
-      >
-        <button
-          v-if="canMove"
-          @click="action('move')"
-          class="info-action info-action--move"
-          title="Move"
-        >
-          <Icon name="forward" :size="14" />
-          <span>Move</span>
-        </button>
-        <button
-          v-if="canCopy"
-          @click="action('copy')"
-          class="info-action info-action--copy"
-          title="Copy"
-        >
-          <Icon name="copy" :size="14" />
-          <span>Copy</span>
-        </button>
-        <!-- V2 #5: edit-tags joins the action row (between Copy and Preview),
-             mirroring the preview details panel, instead of a separate button. -->
-        <button
-          v-if="canEditTags"
-          @click="action('audio-tags')"
-          class="info-action info-action--tags"
-          title="Edit tags"
-        >
-          <Icon name="music" :size="14" />
-          <span>Edit tags</span>
-        </button>
-        <button
-          v-if="!item.isDir && canExtract"
-          @click="action('extract')"
-          class="info-action info-action--extract"
-          title="Extract"
-        >
-          <Icon name="package-open" :size="14" />
-          <span>Extract</span>
-        </button>
-        <button
-          v-else-if="!item.isDir"
-          @click="open"
-          class="info-action info-action--preview"
-          title="Preview"
-        >
-          <Icon name="eye" :size="14" />
-          <span>Preview</span>
-        </button>
-      </div>
-      <div v-else class="pb-4"></div>
-
-      <!-- Properties -->
-      <div class="px-4 py-3">
         <div
-          class="text-[11px] font-semibold text-ink-3 uppercase tracking-[0.06em] mb-2"
+          v-if="canMove || canCopy || !item.isDir"
+          class="pb-4 grid gap-1.5"
+          :class="
+            !item.isDir
+              ? canEditTags
+                ? 'px-4 grid-cols-4'
+                : 'px-4 grid-cols-3'
+              : 'grid-cols-2 w-2/3 mx-auto'
+          "
         >
-          Properties
+          <button
+            v-if="canMove"
+            @click="action('move')"
+            class="info-action info-action--move"
+            title="Move"
+          >
+            <Icon name="forward" :size="14" />
+            <span>Move</span>
+          </button>
+          <button
+            v-if="canCopy"
+            @click="action('copy')"
+            class="info-action info-action--copy"
+            title="Copy"
+          >
+            <Icon name="copy" :size="14" />
+            <span>Copy</span>
+          </button>
+          <!-- V2 #5: edit-tags joins the action row (between Copy and Preview),
+             mirroring the preview details panel, instead of a separate button. -->
+          <button
+            v-if="canEditTags"
+            @click="action('audio-tags')"
+            class="info-action info-action--tags"
+            title="Edit tags"
+          >
+            <Icon name="music" :size="14" />
+            <span>Edit tags</span>
+          </button>
+          <button
+            v-if="!item.isDir && canExtract"
+            @click="action('extract')"
+            class="info-action info-action--extract"
+            title="Extract"
+          >
+            <Icon name="package-open" :size="14" />
+            <span>Extract</span>
+          </button>
+          <button
+            v-else-if="!item.isDir"
+            @click="open"
+            class="info-action info-action--preview"
+            title="Preview"
+          >
+            <Icon name="eye" :size="14" />
+            <span>Preview</span>
+          </button>
         </div>
-        <dl class="text-[12px] space-y-1.5">
-          <div class="flex justify-between gap-3">
-            <dt class="text-ink-3">Type</dt>
-            <dd class="text-ink-1">{{ typeLabel }}</dd>
-          </div>
-          <div class="flex justify-between gap-3">
-            <dt class="text-ink-3">Size</dt>
-            <dd class="text-ink-1 tabular">
-              {{ item.isDir ? folderSizeLabel : sizeLabel }}
-            </dd>
-          </div>
-          <div class="flex justify-between gap-3">
-            <dt class="text-ink-3">Modified</dt>
-            <dd class="text-ink-1 tabular">{{ modifiedLabel }}</dd>
-          </div>
-          <div v-if="item.extension" class="flex justify-between gap-3">
-            <dt class="text-ink-3">Extension</dt>
-            <dd class="text-ink-1 font-mono text-[11px]">
-              {{ item.extension }}
-            </dd>
-          </div>
-        </dl>
-      </div>
+        <div v-else class="pb-4"></div>
 
-      <!-- WS7 #8: read-only audio tags for a single selected music file.
+        <!-- Properties -->
+        <div class="px-4 py-3">
+          <div
+            class="text-[11px] font-semibold text-ink-3 uppercase tracking-[0.06em] mb-2"
+          >
+            Properties
+          </div>
+          <dl class="text-[12px] space-y-1.5">
+            <div class="flex justify-between gap-3">
+              <dt class="text-ink-3">Type</dt>
+              <dd class="text-ink-1">{{ typeLabel }}</dd>
+            </div>
+            <div class="flex justify-between gap-3">
+              <dt class="text-ink-3">Size</dt>
+              <dd class="text-ink-1 tabular">
+                {{ item.isDir ? folderSizeLabel : sizeLabel }}
+              </dd>
+            </div>
+            <div class="flex justify-between gap-3">
+              <dt class="text-ink-3">Modified</dt>
+              <dd class="text-ink-1 tabular">{{ modifiedLabel }}</dd>
+            </div>
+            <div v-if="item.extension" class="flex justify-between gap-3">
+              <dt class="text-ink-3">Extension</dt>
+              <dd class="text-ink-1 font-mono text-[11px]">
+                {{ item.extension }}
+              </dd>
+            </div>
+          </dl>
+        </div>
+
+        <!-- WS7 #8: read-only audio tags for a single selected music file.
            Non-empty fields only; refreshes after an edit (watch keys on
            modified). Distinct from the v1.3 user "Tags" section below. -->
-      <div v-if="audioTagRows.length > 0" class="px-4 py-3">
-        <div
-          class="text-[11px] font-semibold text-ink-3 uppercase tracking-[0.06em] mb-2"
-        >
-          Audio tags
-        </div>
-        <dl class="text-[12px] space-y-1.5">
+        <div v-if="audioTagRows.length > 0" class="px-4 py-3">
           <div
-            v-for="row in audioTagRows"
-            :key="row.label"
-            class="flex justify-between gap-3"
+            class="text-[11px] font-semibold text-ink-3 uppercase tracking-[0.06em] mb-2"
           >
-            <dt class="text-ink-3 shrink-0">{{ row.label }}</dt>
-            <dd class="text-ink-1 text-right break-words min-w-0">
-              {{ row.value }}
-            </dd>
+            Audio tags
           </div>
-        </dl>
-      </div>
+          <dl class="text-[12px] space-y-1.5">
+            <div
+              v-for="row in audioTagRows"
+              :key="row.label"
+              class="flex justify-between gap-3"
+            >
+              <dt class="text-ink-3 shrink-0">{{ row.label }}</dt>
+              <dd class="text-ink-1 text-right break-words min-w-0">
+                {{ row.value }}
+              </dd>
+            </div>
+          </dl>
+        </div>
 
-      <!-- Tags (v1.3 S2-5). Full chip list + "Manage tags" CTA that
+        <!-- Tags (v1.3 S2-5). Full chip list + "Manage tags" CTA that
          opens the picker SlideOver. Empty state shows the CTA on its
          own. Reads tags from the cache populated by FileListing's
          batch fetch; falls back to forFile when stale. -->
-      <div class="px-4 py-3">
-        <div class="mb-1.5 flex items-center justify-between gap-2">
-          <div
-            class="text-[11px] font-semibold text-ink-3 uppercase tracking-[0.06em]"
-          >
-            Tags
+        <div class="px-4 py-3">
+          <div class="mb-1.5 flex items-center justify-between gap-2">
+            <div
+              class="text-[11px] font-semibold text-ink-3 uppercase tracking-[0.06em]"
+            >
+              Tags
+            </div>
+            <button
+              type="button"
+              class="info-pane__manage-tags"
+              :title="itemTags.length === 0 ? 'Add tags' : 'Manage tags'"
+              @click="tagPicker.open"
+            >
+              <Icon
+                :name="itemTags.length === 0 ? 'plus' : 'pencil'"
+                :size="11"
+              />
+              <span>{{ itemTags.length === 0 ? "Add" : "Manage" }}</span>
+            </button>
           </div>
-          <button
-            type="button"
-            class="info-pane__manage-tags"
-            :title="itemTags.length === 0 ? 'Add tags' : 'Manage tags'"
-            @click="tagPicker.open"
-          >
-            <Icon
-              :name="itemTags.length === 0 ? 'plus' : 'pencil'"
-              :size="11"
+          <div v-if="itemTags.length > 0" class="info-pane__tag-list">
+            <TagChip
+              v-for="t in itemTags"
+              :key="t.id"
+              :tag="t"
+              size="md"
+              :focusable="false"
             />
-            <span>{{ itemTags.length === 0 ? "Add" : "Manage" }}</span>
-          </button>
-        </div>
-        <div v-if="itemTags.length > 0" class="info-pane__tag-list">
-          <TagChip
-            v-for="t in itemTags"
-            :key="t.id"
-            :tag="t"
-            size="md"
-            :focusable="false"
-          />
-        </div>
-        <div v-else class="info-pane__tag-empty">No tags</div>
-      </div>
-
-      <!-- Location -->
-      <div class="px-4 py-3">
-        <div class="mb-1.5 flex items-center justify-between gap-2">
-          <div
-            class="text-[11px] font-semibold text-ink-3 uppercase tracking-[0.06em]"
-          >
-            Location
           </div>
-          <!-- G6: Copy path action. Lives next to the Location label so
+          <div v-else class="info-pane__tag-empty">No tags</div>
+        </div>
+
+        <!-- Location -->
+        <div class="px-4 py-3">
+          <div class="mb-1.5 flex items-center justify-between gap-2">
+            <div
+              class="text-[11px] font-semibold text-ink-3 uppercase tracking-[0.06em]"
+            >
+              Location
+            </div>
+            <!-- G6: Copy path action. Lives next to the Location label so
              the affordance is right where the user is looking when they
              want it. Uses the navigator.clipboard API (modern, no fallback
              needed for our target browsers). Toast confirms because the
              OS clipboard is invisible — the user needs feedback to know
              something happened. -->
-          <button
-            type="button"
-            class="info-pane__copy-path"
-            :title="copiedPath ? 'Copied!' : 'Copy path'"
-            :aria-label="copiedPath ? 'Path copied' : 'Copy path'"
-            @click="copyPath"
+            <button
+              type="button"
+              class="info-pane__copy-path"
+              :title="copiedPath ? 'Copied!' : 'Copy path'"
+              :aria-label="copiedPath ? 'Path copied' : 'Copy path'"
+              @click="copyPath"
+            >
+              <Icon :name="copiedPath ? 'check' : 'copy'" :size="12" />
+              <span>{{ copiedPath ? "Copied" : "Copy" }}</span>
+            </button>
+          </div>
+          <div
+            class="font-mono text-[11px] text-ink-2 break-all bg-elevated rounded-md px-2 py-1.5 border border-line"
           >
-            <Icon :name="copiedPath ? 'check' : 'copy'" :size="12" />
-            <span>{{ copiedPath ? "Copied" : "Copy" }}</span>
-          </button>
-        </div>
-        <div
-          class="font-mono text-[11px] text-ink-2 break-all bg-elevated rounded-md px-2 py-1.5 border border-line"
-        >
-          {{ item.path || item.url }}
-        </div>
-      </div>
-    </template>
-
-    <!-- ── State 2: 2+ items selected ─────────────────────────────── -->
-    <template v-else-if="selectedCount >= 2">
-      <div class="ip-summary">
-        <div class="ip-summary__icon ip-summary__icon--accent">
-          <Icon name="layers" :size="26" :stroke-width="1.4" />
-        </div>
-        <div class="ip-summary__title">{{ selectedCount }} items selected</div>
-        <div class="ip-summary__meta">{{ selectionSizeLabel }} total</div>
-        <p class="ip-summary__hint">
-          Use the action bar at the bottom of the list to move, copy, rename or
-          delete the selection.
-        </p>
-      </div>
-    </template>
-
-    <!-- ── State 3: nothing selected → current folder summary ─────── -->
-    <template v-else>
-      <div class="ip-summary">
-        <div class="ip-summary__icon ip-summary__icon--folder">
-          <Icon
-            name="folder"
-            :size="26"
-            :stroke-width="1.4"
-            fill="currentColor"
-          />
-        </div>
-        <div class="ip-summary__title">{{ folderName }}</div>
-        <div class="ip-summary__meta">
-          {{ folderItemCount }} {{ folderItemCount === 1 ? "item" : "items" }}
-        </div>
-        <dl class="ip-summary__props">
-          <div class="ip-summary__prop">
-            <dt>Folders</dt>
-            <dd class="tabular">{{ folderDirCount }}</dd>
+            {{ item.path || item.url }}
           </div>
-          <div class="ip-summary__prop">
-            <dt>Files</dt>
-            <dd class="tabular">{{ folderFileCount }}</dd>
-          </div>
-          <div class="ip-summary__prop ip-summary__prop--path">
-            <dt>Path</dt>
-            <dd class="ip-summary__path" :title="folderPath">
-              {{ folderPath }}
-            </dd>
-          </div>
-        </dl>
-        <p class="ip-summary__hint">Select an item to see its details.</p>
-      </div>
-    </template>
+        </div>
+      </template>
 
-    <div class="flex-1"></div>
+      <!-- ── State 2: 2+ items selected ─────────────────────────────── -->
+      <template v-else-if="selectedCount >= 2">
+        <div class="ip-summary">
+          <div class="ip-summary__icon ip-summary__icon--accent">
+            <Icon name="layers" :size="26" :stroke-width="1.4" />
+          </div>
+          <div class="ip-summary__title">
+            {{ selectedCount }} items selected
+          </div>
+          <div class="ip-summary__meta">{{ selectionSizeLabel }} total</div>
+          <p class="ip-summary__hint">
+            Use the action bar at the bottom of the list to move, copy, rename
+            or delete the selection.
+          </p>
+        </div>
+      </template>
+
+      <!-- ── State 3: nothing selected → current folder summary ─────── -->
+      <template v-else>
+        <div class="ip-summary">
+          <div class="ip-summary__icon ip-summary__icon--folder">
+            <Icon
+              name="folder"
+              :size="26"
+              :stroke-width="1.4"
+              fill="currentColor"
+            />
+          </div>
+          <div class="ip-summary__title">{{ folderName }}</div>
+          <div class="ip-summary__meta">
+            {{ folderItemCount }} {{ folderItemCount === 1 ? "item" : "items" }}
+          </div>
+          <dl class="ip-summary__props">
+            <div class="ip-summary__prop">
+              <dt>Folders</dt>
+              <dd class="tabular">{{ folderDirCount }}</dd>
+            </div>
+            <div class="ip-summary__prop">
+              <dt>Files</dt>
+              <dd class="tabular">{{ folderFileCount }}</dd>
+            </div>
+            <div class="ip-summary__prop ip-summary__prop--path">
+              <dt>Path</dt>
+              <dd class="ip-summary__path" :title="folderPath">
+                {{ folderPath }}
+              </dd>
+            </div>
+          </dl>
+          <p class="ip-summary__hint">Select an item to see its details.</p>
+        </div>
+      </template>
+    </div>
+    <!-- /ip-scroll -->
 
     <!-- Keyboard hint footer — only meaningful with a selection -->
     <div

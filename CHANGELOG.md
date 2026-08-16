@@ -2,7 +2,21 @@
 
 All notable changes to **vitrine**.
 
-## v3.1.1 — Security patch
+## v3.1.2 — Move & details-pane fixes
+
+- **Fixed: moving or renaming a mounted top-level folder failed and left a
+  stray duplicate.** When each served folder is its own bind mount (the
+  documented deployment), the folder is a filesystem mount point that can't be
+  renamed from inside the container — the underlying move would copy the whole
+  folder and then fail to remove the original, stranding a full duplicate.
+  Vitrine now detects this up front and refuses the move with a clear message
+  ("it's a mounted folder … change its mount path in your Docker/compose config
+  instead") before anything is copied. Moving files and subfolders *inside* or
+  *between* mounts is unaffected.
+- **Fixed: the details pane didn't scroll when its contents ran past the bottom
+  of the screen.** On shorter viewports (or items with many tags / audio
+  fields) the lower sections were cut off and unreachable. The pane's body now
+  scrolls on its own, with the header and footer staying pinned.
 
 - **Updated `golang.org/x/text` to 0.39.0**, closing an infinite-loop
   denial-of-service (GO-2026-5970) reachable through the ID3 tag writer. No
