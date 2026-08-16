@@ -1,6 +1,6 @@
 module github.com/csummers-dev/vitrine/v3
 
-go 1.25.12
+go 1.25.13
 
 require (
 	github.com/asdine/storm/v3 v3.2.1

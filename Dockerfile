@@ -17,7 +17,7 @@ RUN pnpm run build
 ## Runs on the NATIVE build platform (Go cross-compiles, so no slow emulation)
 ## and emits a static, CGO-free binary for $TARGETOS/$TARGETARCH. VERSION /
 ## REVISION are stamped into the version package, mirroring `task build:backend`.
-FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS backend
+FROM --platform=$BUILDPLATFORM golang:1.25.13-alpine AS backend
 WORKDIR /src
 ARG TARGETOS
 ARG TARGETARCH
