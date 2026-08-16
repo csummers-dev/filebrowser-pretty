@@ -2,6 +2,15 @@
 
 All notable changes to **vitrine**.
 
+## v3.1.3 — Security patch
+
+- **Updated the Go toolchain to 1.25.13**, closing seven standard-library
+  vulnerabilities flagged by govulncheck (GO-2026-6218, -6091, -6090, -6089,
+  -6088, GO-2026-5972, GO-2026-5026 — in `net/url`, `html/template`,
+  `crypto/tls`, `net/http`, `encoding/xml`, `encoding/asn1`, and
+  `golang.org/x/net/idna`). Toolchain bump only; no functional or visual
+  changes.
+
 ## v3.1.2 — Move & details-pane fixes
 
 - **Fixed: moving or renaming a mounted top-level folder failed and left a
