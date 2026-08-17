@@ -2,6 +2,18 @@
 
 All notable changes to **vitrine**.
 
+## v3.1.4 — Sort folders by size
+
+- **Fixed: sorting by size didn't order folders.** Files sorted correctly, but
+  folders didn't — the sort used a folder's inode size, while the Size column
+  displays its real recursive size (fetched lazily). Size-sort now orders
+  folders by that **same real size** shown in the column: when you sort by size,
+  every folder's total size is fetched and the folders order biggest-to-smallest
+  (or smallest-first ascending), re-sorting into place as sizes resolve. Folders
+  still calculating cluster together (name-ordered) until their size lands. (The
+  server sort keeps a name fallback for the initial payload; the browser then
+  applies the true-size order.)
+
 ## v3.1.3 — Security patch
 
 - **Updated the Go toolchain to 1.25.13**, closing seven standard-library

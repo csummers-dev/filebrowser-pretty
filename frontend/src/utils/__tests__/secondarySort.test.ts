@@ -1,9 +1,21 @@
 import { describe, it, expect } from "vitest";
 import { sortListing } from "@/utils/secondarySort";
 
-// sortListing only reads name/size/modified/extension off each item.
+// sortListing only reads name/size/modified/extension/isDir off each item.
 const row = (name: string, size: number, modified: string, extension = "") =>
   ({ name, size, modified, extension }) as unknown as ResourceItem;
+
+// A folder row: its `size` is the (meaningless) inode size, so size-sort must
+// ignore it and fall back to name. FileListing sorts dirs and files as
+// separate groups, so a folder group never mixes with files here.
+const dir = (name: string, size: number) =>
+  ({
+    name,
+    size,
+    modified: "",
+    extension: "",
+    isDir: true,
+  }) as unknown as ResourceItem;
 
 // SortCriterion shorthand.
 const crit = (by: SortKey, asc: boolean): SortCriterion => ({ by, asc });
@@ -46,6 +58,49 @@ describe("sortListing", () => {
       null
     );
     expect(out.map((r) => r.name)).toEqual(["b", "c", "a"]);
+  });
+
+  it("sorts folders by name when sorting by size with no resolver (inode size is meaningless)", () => {
+    // Folder inode sizes are unrelated to content size; with no folder-size
+    // resolver, size-sort falls back to name so folders aren't arbitrary.
+    const out = sortListing(
+      [dir("charlie", 4096), dir("alpha", 4096), dir("bravo", 128)],
+      crit("size", true),
+      null
+    );
+    expect(out.map((r) => r.name)).toEqual(["alpha", "bravo", "charlie"]);
+  });
+
+  it("sorts folders by their resolved recursive size when a resolver is given", () => {
+    // Inode sizes are identical/meaningless; the resolver supplies real sizes.
+    const items = [
+      dir("alpha", 4096),
+      dir("bravo", 4096),
+      dir("charlie", 4096),
+    ];
+    const real: Record<string, number> = { alpha: 5, bravo: 900, charlie: 50 };
+    const resolver = (it: ResourceItem) => real[it.name];
+
+    const asc = sortListing(items, crit("size", true), null, resolver);
+    expect(asc.map((r) => r.name)).toEqual(["alpha", "charlie", "bravo"]);
+
+    const desc = sortListing(items, crit("size", false), null, resolver);
+    expect(desc.map((r) => r.name)).toEqual(["bravo", "charlie", "alpha"]);
+  });
+
+  it("clusters folders with unresolved sizes (name-broken) ahead of known ones ascending", () => {
+    const items = [
+      dir("charlie", 4096),
+      dir("alpha", 4096),
+      dir("bravo", 4096),
+    ];
+    // Only bravo's size has resolved; alpha/charlie are still calculating.
+    const resolver = (it: ResourceItem) =>
+      it.name === "bravo" ? 900 : undefined;
+
+    const out = sortListing(items, crit("size", true), null, resolver);
+    // Unknown (-1) cluster first, name-broken (alpha, charlie), then bravo.
+    expect(out.map((r) => r.name)).toEqual(["alpha", "charlie", "bravo"]);
   });
 
   it("orders names naturally (file_2 before file_10)", () => {

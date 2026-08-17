@@ -30,7 +30,20 @@
  * any unparseable input or unexpected key — a comparator that returns NaN makes
  * Array.prototype.sort's order implementation-defined, so we never let one leak.
  */
-function compareBy(a: ResourceItem, b: ResourceItem, by: SortKey): number {
+/**
+ * Resolve a folder's real recursive size (bytes) for size-sorting, or undefined
+ * if it hasn't been fetched yet. Folders carry only their inode size in the
+ * listing; the real size lives in the lazily-populated folder-size cache (the
+ * same one the Size column reads), so the caller injects this lookup.
+ */
+export type FolderSizeResolver = (item: ResourceItem) => number | undefined;
+
+function compareBy(
+  a: ResourceItem,
+  b: ResourceItem,
+  by: SortKey,
+  folderSize?: FolderSizeResolver
+): number {
   switch (by) {
     case "name":
       return a.name.localeCompare(b.name, undefined, {
@@ -38,6 +51,25 @@ function compareBy(a: ResourceItem, b: ResourceItem, by: SortKey): number {
         sensitivity: "base",
       });
     case "size": {
+      // Folders sort by their real recursive size (what the Size column shows),
+      // NOT the listing's inode `size`. That size is fetched lazily and lives in
+      // the folder-size cache, so the caller injects `folderSize`. A size that
+      // hasn't resolved yet uses -1, so still-calculating folders cluster
+      // together (name-broken) and snap into place as they load. With no
+      // resolver — or when both are unknown/equal — fall back to name, so the
+      // folder group stays predictable (matching the backend's bySize).
+      // Dirs and files sort as separate groups, so a.isDir === b.isDir here.
+      if (a.isDir && b.isDir) {
+        if (folderSize) {
+          const sa = folderSize(a) ?? -1;
+          const sb = folderSize(b) ?? -1;
+          if (sa !== sb) return sa - sb;
+        }
+        return a.name.localeCompare(b.name, undefined, {
+          numeric: true,
+          sensitivity: "base",
+        });
+      }
       const d = a.size - b.size;
       return Number.isNaN(d) ? 0 : d;
     }
@@ -67,7 +99,8 @@ function compareBy(a: ResourceItem, b: ResourceItem, by: SortKey): number {
 export function sortListing(
   items: ResourceItem[],
   primary: SortCriterion,
-  secondary: SortCriterion | null
+  secondary: SortCriterion | null,
+  folderSize?: FolderSizeResolver
 ): ResourceItem[] {
   if (items.length < 2) return items;
 
@@ -78,10 +111,10 @@ export function sortListing(
 
   const sorted = [...items];
   sorted.sort((a, b) => {
-    const p = compareBy(a, b, primary.by);
+    const p = compareBy(a, b, primary.by, folderSize);
     if (p !== 0) return primary.asc ? p : -p;
     if (sec) {
-      const s = compareBy(a, b, sec.by);
+      const s = compareBy(a, b, sec.by, folderSize);
       if (s !== 0) return sec.asc ? s : -s;
     }
     // Equal on every active criterion — return 0 so the stable sort keeps
