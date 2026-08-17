@@ -9,7 +9,9 @@
         </span>
         <div class="extract-source__text">
           <div class="extract-source__name">
-            {{ isMulti ? `${sources.length} archives` : (snapshot?.name ?? "") }}
+            {{
+              isMulti ? `${sources.length} archives` : (snapshot?.name ?? "")
+            }}
           </div>
           <div class="extract-source__meta">
             {{
@@ -357,7 +359,9 @@ watch(
     }
     sources.value = fileStore.selected
       .map((i) => req.items[i])
-      .filter((it): it is (typeof req.items)[number] => !!it && isExtractable(it.name))
+      .filter(
+        (it): it is (typeof req.items)[number] => !!it && isExtractable(it.name)
+      )
       .map((it) => ({ url: it.url, name: it.name, size: it.size }));
     // WS9: seed the editable new-folder name from the first archive (used only
     // in the single-archive flow).

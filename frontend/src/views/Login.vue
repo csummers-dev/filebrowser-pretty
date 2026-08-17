@@ -32,9 +32,7 @@
         <template v-if="createMode">
           Create your <BrandName :name="brand" /> account
         </template>
-        <template v-else>
-          Sign in to <BrandName :name="brand" />
-        </template>
+        <template v-else> Sign in to <BrandName :name="brand" /> </template>
       </h1>
       <p class="login-card__subtitle">
         {{

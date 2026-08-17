@@ -2,6 +2,23 @@
 
 All notable changes to **vitrine**.
 
+## v3.1.5 — Fix blank file list + dependency & lint cleanup
+
+- **Fixed: the file list rendered nothing (blank view) after v3.1.4.** The
+  size-sort prefetch added in v3.1.4 evaluated the listing's sort during
+  component setup, before a value it depends on was initialized — a
+  temporal-dead-zone error that aborted rendering, so no files or folders
+  appeared and a refresh didn't help. The prefetch now reads the raw listing
+  directly and no longer triggers that early evaluation. Verified by mounting
+  the real view (loads correctly; size-sort orders folders both directions).
+- **Updated dependencies with known advisories** (frontend): `postcss`
+  8.5.15 → 8.5.23+ (Dependabot #48), `dompurify` → 3.4.13, `pdfjs-dist`
+  6.0.227 → 6.2.108, plus `@xmldom/xmldom` (→ 0.8.13) and `nanoid` (→ 3.3.18)
+  pinned via overrides. `pnpm audit --prod` is now clean (was 11 findings).
+- **Cleared all lint warnings.** Fixed the remaining pre-existing Prettier
+  formatting warnings across the frontend so `pnpm run lint` reports zero
+  warnings. Formatting only; no behavior change.
+
 ## v3.1.4 — Sort folders by size
 
 - **Fixed: sorting by size didn't order folders.** Files sorted correctly, but

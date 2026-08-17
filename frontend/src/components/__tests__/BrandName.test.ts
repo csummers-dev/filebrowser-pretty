@@ -23,7 +23,7 @@ describe("BrandName", () => {
     const wrapper = mount(BrandName, { props: { name: "vitrine" } });
     const classes = accentLetters(wrapper).map((l) =>
       // the modulo-6 suffix class, e.g. "brand-name__ltr--3"
-      l.classes().find((c) => c.startsWith("brand-name__ltr--")),
+      l.classes().find((c) => c.startsWith("brand-name__ltr--"))
     );
     // 7 letters → indices 0,1,2,3,4,5,0 (cycles at the 7th)
     expect(classes).toEqual([

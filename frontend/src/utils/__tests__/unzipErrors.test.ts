@@ -121,11 +121,9 @@ describe("buildBatchDests — multi-archive destination paths", () => {
       "/x/data%20(2)",
     ]);
     // Same name three times → data, data (2), data (3).
-    expect(buildBatchDests("/x/", ["Data.zip", "data.zip", "DATA.7z"])).toEqual([
-      "/x/Data",
-      "/x/data%20(2)",
-      "/x/DATA%20(3)",
-    ]);
+    expect(buildBatchDests("/x/", ["Data.zip", "data.zip", "DATA.7z"])).toEqual(
+      ["/x/Data", "/x/data%20(2)", "/x/DATA%20(3)"]
+    );
   });
 
   it("URL-encodes spaces and special characters in the folder name", () => {

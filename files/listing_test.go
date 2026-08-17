@@ -1,6 +1,7 @@
 package files
 
 import (
+	"reflect"
 	"testing"
 )
 
@@ -58,5 +59,29 @@ func TestApplySortBySizeFilesBySize(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("bySize files asc = %v, want %v", got, want)
 		}
+	}
+}
+
+// Descending exercises the sort.Reverse path: the folder/file grouping flips
+// (files first), files go largest→smallest, and the folder group's name
+// fallback flips too (charlie→alpha). Guards that reverse doesn't corrupt the
+// grouping or leave folders arbitrary.
+func TestApplySortBySizeDescending(t *testing.T) {
+	l := Listing{
+		Items: []*FileInfo{
+			{Name: "charlie", Size: 4096, IsDir: true},
+			{Name: "alpha", Size: 4096, IsDir: true},
+			{Name: "bravo", Size: 4096, IsDir: true},
+			{Name: "small.bin", Size: 10, IsDir: false},
+			{Name: "big.bin", Size: 900, IsDir: false},
+		},
+		Sorting: Sorting{By: "size", Asc: false},
+	}
+	l.ApplySort()
+
+	got := names(l)
+	want := []string{"big.bin", "small.bin", "charlie", "bravo", "alpha"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("bySize desc = %v, want %v", got, want)
 	}
 }
