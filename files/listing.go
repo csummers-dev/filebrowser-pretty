@@ -93,16 +93,23 @@ func (l bySize) Swap(i, j int) {
 	l.Items[i], l.Items[j] = l.Items[j], l.Items[i]
 }
 
-const directoryOffset = -1 << 31 // = math.MinInt32
 func (l bySize) Less(i, j int) bool {
-	iSize, jSize := l.Items[i].Size, l.Items[j].Size
+	// Folders group together, ahead of files (flipped to the bottom under
+	// reverse sort — same as byName/byExtension). A folder's listing Size is
+	// only its inode size, not its recursive content size (that's fetched
+	// lazily per-folder via GET /api/folder-size), so ordering folders by Size
+	// is meaningless and leaves them in an arbitrary order. Fall back to name
+	// so the folder group stays predictable, matching byExtension.
+	if l.Items[i].IsDir != l.Items[j].IsDir {
+		return l.Items[i].IsDir
+	}
 	if l.Items[i].IsDir {
-		iSize = directoryOffset + iSize
+		return natural.Less(
+			strings.ToLower(l.Items[i].Name),
+			strings.ToLower(l.Items[j].Name),
+		)
 	}
-	if l.Items[j].IsDir {
-		jSize = directoryOffset + jSize
-	}
-	return iSize < jSize
+	return l.Items[i].Size < l.Items[j].Size
 }
 
 // By Modified

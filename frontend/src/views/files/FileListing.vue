@@ -986,6 +986,7 @@ import { useTouchDevice } from "@/composables/useTouchDevice";
 import { usePullToRefresh } from "@/composables/usePullToRefresh";
 import { copy } from "@/utils/clipboard";
 import { sortListing } from "@/utils/secondarySort";
+import { useFolderSizes } from "@/composables/useFolderSizes";
 
 import { users, files as api, trash as trashApi } from "@/api";
 import { enableExec, unzipEnabled } from "@/utils/constants";
@@ -1112,6 +1113,9 @@ const fileStore = useFileStore();
 const layoutStore = useLayoutStore();
 const tagsStore = useTagsStore();
 const prefs = usePreferences();
+// Shared lazy folder-size cache — feeds both the Size column display and,
+// when sorting by size, the folder sort order (see the `items` computed).
+const folderSizes = useFolderSizes();
 // V2-J: the mobile hamburger lives in the hero now (no top header bar).
 const mobileNav = useMobileNav();
 // Shared open-state for the favorites display-title editor, opened from the
@@ -1843,11 +1847,40 @@ const items = computed(() => {
     asc: fileStore.req?.sorting.asc ?? false,
   };
   const sec = secondarySort.value;
+  // Folders sort by their REAL recursive size (the value shown in the Size
+  // column), which lives in the lazily-populated folder-size cache — not the
+  // listing's inode `size`. Reading `folderSizes.cached` here (via the sort)
+  // makes this computed reactive: as each folder's size resolves, the list
+  // re-sorts into place. Sizes are prefetched below when size-sort is active.
+  const folderSizeOf = (item: ResourceItem): number | undefined =>
+    item.isDir
+      ? folderSizes.cached(item.url, String(item.modified ?? ""))
+      : undefined;
   return {
-    dirs: sortListing(dirs, primary, sec),
-    files: sortListing(files, primary, sec),
+    dirs: sortListing(dirs, primary, sec, folderSizeOf),
+    files: sortListing(files, primary, sec, folderSizeOf),
   };
 });
+
+// When sorting by size, prefetch EVERY folder's recursive size (not just the
+// visible rows the Size column lazy-loads) so the order is complete and
+// correct rather than settling only as the user scrolls. ensureMany skips
+// already-cached/in-flight folders and bounds concurrency, and the server
+// caches + singleflights, so repeats are cheap. Fires only while size-sort is
+// active; rows re-sort reactively as each resolves.
+watch(
+  () => ({
+    by: fileStore.req?.sorting.by,
+    dirs: items.value.dirs,
+  }),
+  ({ by, dirs }) => {
+    if (by !== "size") return;
+    void folderSizes.ensureMany(
+      dirs.map((d) => ({ path: d.url, mod: String(d.modified ?? "") }))
+    );
+  },
+  { immediate: true }
+);
 
 const files = computed((): ResourceItem[] => {
   const all = items.value.files;
