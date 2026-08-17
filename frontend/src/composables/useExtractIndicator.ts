@@ -143,10 +143,11 @@ export function useExtractIndicator() {
       items.map((i) => i.name)
     );
 
-    const progressId = toast.info(
-      `Extracting ${total} archives…`,
-      { timeout: false, closeButton: false, draggable: false }
-    );
+    const progressId = toast.info(`Extracting ${total} archives…`, {
+      timeout: false,
+      closeButton: false,
+      draggable: false,
+    });
 
     for (let idx = 0; idx < items.length; idx++) {
       const it = items[idx];

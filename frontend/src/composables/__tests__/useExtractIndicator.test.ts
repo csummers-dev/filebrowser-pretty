@@ -11,7 +11,11 @@ vi.mock("@/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/api")>();
   return {
     ...actual,
-    files: { ...actual.files, unzip: (...a: unknown[]) => unzip(...a), remove: (...a: unknown[]) => remove(...a) },
+    files: {
+      ...actual.files,
+      unzip: (...a: unknown[]) => unzip(...a),
+      remove: (...a: unknown[]) => remove(...a),
+    },
   };
 });
 
@@ -57,9 +61,23 @@ describe("runExtractBatch", () => {
       openFolder: false,
     });
     expect(unzip).toHaveBeenCalledTimes(2);
-    expect(unzip).toHaveBeenNthCalledWith(1, "/files/a.zip", "/files/dl/a", false, undefined);
-    expect(unzip).toHaveBeenNthCalledWith(2, "/files/b.7z", "/files/dl/b", false, undefined);
-    expect(toast.success).toHaveBeenCalledWith(expect.stringContaining("Extracted 2 archives"));
+    expect(unzip).toHaveBeenNthCalledWith(
+      1,
+      "/files/a.zip",
+      "/files/dl/a",
+      false,
+      undefined
+    );
+    expect(unzip).toHaveBeenNthCalledWith(
+      2,
+      "/files/b.7z",
+      "/files/dl/b",
+      false,
+      undefined
+    );
+    expect(toast.success).toHaveBeenCalledWith(
+      expect.stringContaining("Extracted 2 archives")
+    );
   });
 
   it("de-duplicates colliding subfolders across archives", async () => {
@@ -70,8 +88,20 @@ describe("runExtractBatch", () => {
       deleteOriginal: false,
       openFolder: false,
     });
-    expect(unzip).toHaveBeenNthCalledWith(1, "/files/data.zip", "/x/data", false, undefined);
-    expect(unzip).toHaveBeenNthCalledWith(2, "/files/data.7z", "/x/data%20(2)", false, undefined);
+    expect(unzip).toHaveBeenNthCalledWith(
+      1,
+      "/files/data.zip",
+      "/x/data",
+      false,
+      undefined
+    );
+    expect(unzip).toHaveBeenNthCalledWith(
+      2,
+      "/files/data.7z",
+      "/x/data%20(2)",
+      false,
+      undefined
+    );
   });
 
   it("deletes the original ONLY for archives that extracted successfully", async () => {
@@ -89,8 +119,12 @@ describe("runExtractBatch", () => {
     // only the successful one's source is removed
     expect(remove).toHaveBeenCalledTimes(1);
     expect(remove).toHaveBeenCalledWith("/files/good.zip");
-    expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("bad.zip"));
-    expect(toast.success).toHaveBeenCalledWith(expect.stringContaining("Extracted 1 of 2"));
+    expect(toast.error).toHaveBeenCalledWith(
+      expect.stringContaining("bad.zip")
+    );
+    expect(toast.success).toHaveBeenCalledWith(
+      expect.stringContaining("Extracted 1 of 2")
+    );
   });
 
   it("keeps going after a failure and reports the partial count", async () => {

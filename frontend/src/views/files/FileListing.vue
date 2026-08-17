@@ -1868,15 +1868,23 @@ const items = computed(() => {
 // already-cached/in-flight folders and bounds concurrency, and the server
 // caches + singleflights, so repeats are cheap. Fires only while size-sort is
 // active; rows re-sort reactively as each resolves.
+//
+// This reads `fileStore.req` DIRECTLY, never the `items` computed — on purpose.
+// `items` depends on `secondarySort`, which is declared later in this setup, so
+// touching `items.value` under `immediate: true` would evaluate it before that
+// const is initialized: a temporal-dead-zone ReferenceError that broke the
+// whole view. The prefetch only needs the folder SET, not the sorted order.
 watch(
   () => ({
     by: fileStore.req?.sorting.by,
-    dirs: items.value.dirs,
+    reqItems: fileStore.req?.items,
   }),
-  ({ by, dirs }) => {
-    if (by !== "size") return;
+  ({ by, reqItems }) => {
+    if (by !== "size" || !reqItems) return;
     void folderSizes.ensureMany(
-      dirs.map((d) => ({ path: d.url, mod: String(d.modified ?? "") }))
+      reqItems
+        .filter((it) => it.isDir)
+        .map((d) => ({ path: d.url, mod: String(d.modified ?? "") }))
     );
   },
   { immediate: true }
